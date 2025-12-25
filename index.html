@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#f2f2f7">
+    <title>Garage Log</title>
+    
+    <style>
+        /* --- 1. アプリ化のための基本CSS --- */
+        :root {
+            --bg-color: #f2f2f7;
+            --card-bg: #ffffff;
+            --text-main: #1c1c1e;
+            --text-sub: #8e8e93;
+            --accent: #007aff;
+            --danger: #ff3b30;
+            --separator: #c6c6c8;
+            --safe-top: env(safe-area-inset-top);
+            --safe-bottom: env(safe-area-inset-bottom);
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            -webkit-user-select: none;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+            overscroll-behavior-y: none;
+            height: 100vh;
+            overflow: hidden; /* スクロールは各viewで行う */
+        }
+
+        /* --- 2. レイアウト要素 --- */
+        /* ヘッダー */
+        header {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 44px;
+            padding-top: var(--safe-top);
+            background: rgba(255,255,255,0.95);
+            backdrop-filter: blur(10px);
+            border-bottom: 0.5px solid var(--separator);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            font-size: 17px;
+            z-index: 1000;
+        }
+
+        .header-btn {
+            position: absolute;
+            left: 16px;
+            color: var(--accent);
+            font-size: 16px;
+            cursor: pointer;
+            display: none; /* デフォルト非表示 */
+        }
+
+        /* 画面（View）の制御 */
+        .view-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            padding-top: calc(44px + var(--safe-top));
+            padding-bottom: calc(80px + var(--safe-bottom));
+            box-sizing: border-box;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+            transition: transform 0.3s ease;
+            background-color: var(--bg-color);
+        }
+
+        /* 画面遷移アニメーション用 */
+        .view-hidden {
+            transform: translateX(100%);
+            display: none;
+        }
+        .view-active {
+            transform: translateX(0);
+            display: block;
+        }
+
+        /* --- 3. UIコンポーネント --- */
+        /* カードリスト */
+        .list-group {
+            padding: 16px;
+        }
+
+        .card {
+            background: var(--card-bg);
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            position: relative;
+        }
+        .card:active {
+            opacity: 0.7;
+            transform: scale(0.98);
+            transition: 0.1s;
+        }
+
+        /* 車両リスト用スタイル */
+        .vehicle-name { font-size: 18px; font-weight: bold; }
+        .vehicle-meta { font-size: 13px; color: var(--text-sub); margin-top: 4px; }
+
+        /* ログリスト用スタイル */
+        .log-row { display: flex; justify-content: space-between; align-items: baseline; }
+        .log-date { font-size: 13px; color: var(--text-sub); }
+        .log-title { font-size: 16px; font-weight: 600; margin: 4px 0; }
+        .log-remarks { font-size: 14px; color: #555; margin-top: 4px; border-top: 1px dashed #eee; padding-top:4px;}
+        .log-km { color: var(--accent); font-weight: bold; font-family: "SF Mono", monospace; }
+
+        /* 入力モーダル */
+        #modal {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 2000;
+            display: flex;
+            align-items: flex-end;
+            visibility: hidden;
+            opacity: 0;
+            transition: 0.2s;
+        }
+        #modal.active { visibility: visible; opacity: 1; }
+
+        .modal-content {
+            background: var(--bg-color);
+            width: 100%;
+            border-radius: 16px 16px 0 0;
+            padding: 20px;
+            padding-bottom: calc(20px + var(--safe-bottom));
+            transform: translateY(100%);
+            transition: 0.3s;
+        }
+        #modal.active .modal-content { transform: translateY(0); }
+
+        /* フォーム要素 */
+        .form-group { margin-bottom: 16px; }
+        label { display: block; font-size: 12px; color: var(--text-sub); margin-bottom: 4px; }
+        input, textarea {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            font-size: 16px;
+            box-sizing: border-box;
+            font-family: inherit;
+            background: #fff;
+        }
+        textarea { resize: none; height: 80px; }
+
+        .btn-primary {
+            width: 100%;
+            background: var(--accent);
+            color: white;
+            border: none;
+            padding: 14px;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        /* FAB (追加ボタン) */
+        .fab {
+            position: fixed;
+            bottom: calc(24px + var(--safe-bottom));
+            right: 24px;
+            width: 56px;
+            height: 56px;
+            background: var(--accent);
+            border-radius: 50%;
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 30px;
+            box-shadow: 0 4px 12px rgba(0,122,255,0.4);
+            z-index: 1500;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        .fab:active { transform: scale(0.9); }
+
+        /* 空の状態表示 */
+        .empty-state { text-align: center; color: var(--text-sub); margin-top: 40px; font-size: 14px;}
+    </style>
+</head>
+<body>
+
+    <header>
+        <div id="btn-back" class="header-btn">◀ 戻る</div>
+        <div id="header-title">ガレージ</div>
+    </header>
+
+    <div id="view-vehicles" class="view-container view-active">
+        <div id="vehicle-list" class="list-group">
+            </div>
+    </div>
+
+    <div id="view-logs" class="view-container view-hidden">
+        <div id="log-list" class="list-group">
+            </div>
+    </div>
+
+    <div id="fab" class="fab">+</div>
+
+    <div id="modal">
+        <div class="modal-content">
+            <h3 style="margin-top:0; margin-bottom:16px;">記録を追加</h3>
+            <form id="log-form">
+                <div class="form-group">
+                    <label>日付</label>
+                    <input type="date" id="inp-date" required>
+                </div>
+                <div class="form-group">
+                    <label>走行距離 (km)</label>
+                    <input type="number" id="inp-km" placeholder="例: 12500" required>
+                </div>
+                <div class="form-group">
+                    <label>整備内容</label>
+                    <input type="text" id="inp-content" placeholder="例: オイル交換" required>
+                </div>
+                <div class="form-group">
+                    <label>備考</label>
+                    <textarea id="inp-remarks" placeholder="品番や金額など"></textarea>
+                </div>
+                <button type="submit" class="btn-primary">保存</button>
+            </form>
+            <div style="text-align:center; margin-top:12px; color:var(--text-sub); font-size:14px;" onclick="closeModal()">キャンセル</div>
+        </div>
+    </div>
+
+    <script type="module">
+        // ---------------------------------------------------------
+        // 1. Firebase 設定 (ここをご自身のConfigに書き換えてください)
+        // ---------------------------------------------------------
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getFirestore, collection, addDoc, getDocs, query, orderBy, where, Timestamp } 
+        from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+        // ★★★ ここにFirebaseコンソールの設定値を貼る ★★★
+        const firebaseConfig = {
+            apiKey: "AIzaSy...",
+            authDomain: "your-project.firebaseapp.com",
+            projectId: "your-project",
+            storageBucket: "your-project.appspot.com",
+            messagingSenderId: "123456...",
+            appId: "1:123456..."
+        };
+
+        // Firebase初期化 (Configが空の場合はダミー動作モードにしないとエラーになるため注意)
+        let db;
+        try {
+            const app = initializeApp(firebaseConfig);
+            db = getFirestore(app);
+            console.log("Firebase initialized");
+        } catch (e) {
+            console.error("Firebase Configが設定されていません。", e);
+            alert("Firebase設定が必要です。ソースコードを確認してください。");
+        }
+
+        // ---------------------------------------------------------
+        // 2. アプリの状態管理
+        // ---------------------------------------------------------
+        let currentVehicle = null; // 選択中の車両データ
+
+        // ダミー車両データ（初回起動確認用。Firebaseにデータがない場合に使用）
+        const DUMMY_VEHICLES = [
+            { id: "v1", name: "プリウス", initDate: "2020-01" },
+            { id: "v2", name: "CB400SF", initDate: "2018-05" }
+        ];
+
+        // ---------------------------------------------------------
+        // 3. DOM要素の取得
+        // ---------------------------------------------------------
+        const viewVehicles = document.getElementById('view-vehicles');
+        const viewLogs = document.getElementById('view-logs');
+        const headerTitle = document.getElementById('header-title');
+        const btnBack = document.getElementById('btn-back');
+        const vehicleListEl = document.getElementById('vehicle-list');
+        const logListEl = document.getElementById('log-list');
+        const fab = document.getElementById('fab');
+        const modal = document.getElementById('modal');
+        const form = document.getElementById('log-form');
+
+        // ---------------------------------------------------------
+        // 4. 関数定義
+        // ---------------------------------------------------------
+
+        // アプリ初期化
+        async function init() {
+            // 今日の日付をセット
+            document.getElementById('inp-date').valueAsDate = new Date();
+            await loadVehicles();
+        }
+
+        // 車両リスト読み込み
+        async function loadVehicles() {
+            vehicleListEl.innerHTML = '<div class="empty-state">読み込み中...</div>';
+            
+            // 本当はFirebaseから取得しますが、まずは動かすためにダミーかFirestoreか分岐
+            let vehicles = [];
+            
+            try {
+                // Firestoreから取得 (車両コレクション 'vehicles' があると仮定)
+                // もしデータがなければダミーを表示
+                /* const q = query(collection(db, "vehicles"));
+                const snapshot = await getDocs(q);
+                snapshot.forEach(doc => vehicles.push({id: doc.id, ...doc.data()}));
+                */
+               
+                // デモ用にダミーを使用（Firebase接続できたら上記コメントアウトを外す）
+                if(vehicles.length === 0) vehicles = DUMMY_VEHICLES;
+
+            } catch(e) {
+                console.warn("Firestore接続エラー、または未設定:", e);
+                vehicles = DUMMY_VEHICLES;
+            }
+
+            renderVehicleList(vehicles);
+        }
+
+        // 車両リスト描画
+        function renderVehicleList(vehicles) {
+            vehicleListEl.innerHTML = '';
+            vehicles.forEach(v => {
+                const card = document.createElement('div');
+                card.className = 'card';
+                card.innerHTML = `
+                    <div class="vehicle-name">${v.name}</div>
+                    <div class="vehicle-meta">登録: ${v.initDate}</div>
+                `;
+                card.onclick = () => openVehicleLogs(v);
+                vehicleListEl.appendChild(card);
+            });
+        }
+
+        // 車両選択 -> ログ画面へ遷移
+        async function openVehicleLogs(vehicle) {
+            currentVehicle = vehicle;
+            
+            // ヘッダー変更
+            headerTitle.textContent = vehicle.name;
+            btnBack.style.display = 'block';
+
+            // 画面切り替え
+            viewVehicles.classList.remove('view-active');
+            viewVehicles.classList.add('view-hidden');
+            viewLogs.classList.remove('view-hidden');
+            viewLogs.classList.add('view-active');
+
+            // ログ読み込み
+            await loadLogs(vehicle.id);
+        }
+
+        // 戻るボタン
+        btnBack.onclick = () => {
+            currentVehicle = null;
+            headerTitle.textContent = "ガレージ";
+            btnBack.style.display = 'none';
+
+            viewLogs.classList.remove('view-active');
+            viewLogs.classList.add('view-hidden');
+            viewVehicles.classList.remove('view-hidden');
+            viewVehicles.classList.add('view-active');
+        };
+
+        // ログ読み込み
+        async function loadLogs(vehicleId) {
+            logListEl.innerHTML = '<div class="empty-state">記録を読み込み中...</div>';
+            
+            let logs = [];
+            try {
+                // Firestore: 'vehicles/{id}/logs' サブコレクションを取得
+                const logsRef = collection(db, "vehicles", vehicleId, "logs");
+                const q = query(logsRef, orderBy("date", "desc"));
+                const snapshot = await getDocs(q);
+                
+                snapshot.forEach(doc => {
+                    logs.push({ id: doc.id, ...doc.data() });
+                });
+            } catch (e) {
+                console.log("ログ取得スキップ(デモモード)");
+            }
+
+            renderLogs(logs);
+        }
+
+        // ログ描画
+        function renderLogs(logs) {
+            logListEl.innerHTML = '';
+            if (logs.length === 0) {
+                logListEl.innerHTML = '<div class="empty-state">整備記録はまだありません。<br>右下の＋ボタンで追加してください。</div>';
+                return;
+            }
+
+            logs.forEach(log => {
+                const el = document.createElement('div');
+                el.className = 'card';
+                el.innerHTML = `
+                    <div class="log-row">
+                        <div class="log-title">${log.content}</div>
+                        <div class="log-km">${Number(log.km).toLocaleString()} km</div>
+                    </div>
+                    <div class="log-date">${log.date}</div>
+                    ${log.remarks ? `<div class="log-remarks">${log.remarks}</div>` : ''}
+                `;
+                logListEl.appendChild(el);
+            });
+        }
+
+        // ---------------------------------------------------------
+        // 5. 追加モーダル制御
+        // ---------------------------------------------------------
+        fab.onclick = () => {
+            if (!currentVehicle) {
+                alert("車両を選択してください"); // 通常ここには来ない
+                return;
+            }
+            modal.classList.add('active');
+        };
+
+        window.closeModal = () => {
+            modal.classList.remove('active');
+        };
+
+        // データ保存処理
+        form.onsubmit = async (e) => {
+            e.preventDefault();
+            const date = document.getElementById('inp-date').value;
+            const km = document.getElementById('inp-km').value;
+            const content = document.getElementById('inp-content').value;
+            const remarks = document.getElementById('inp-remarks').value;
+
+            try {
+                // Firestoreに保存
+                const logsRef = collection(db, "vehicles", currentVehicle.id, "logs");
+                await addDoc(logsRef, {
+                    date: date,
+                    km: Number(km),
+                    content: content,
+                    remarks: remarks,
+                    createdAt: Timestamp.now()
+                });
+
+                closeModal();
+                form.reset();
+                document.getElementById('inp-date').valueAsDate = new Date(); // 日付リセット
+                loadLogs(currentVehicle.id); // リスト再読み込み
+
+            } catch (e) {
+                alert("保存に失敗しました: " + e.message);
+            }
+        };
+
+        // 開始
+        init();
+
+    </script>
+</body>
+</html>
